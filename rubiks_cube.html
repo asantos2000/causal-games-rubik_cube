@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rubik's Cube</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d0d1a; overflow: hidden; font-family: system-ui, sans-serif; }
+    canvas { display: block; }
+
+    #hint {
+      position: fixed;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.38);
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    #counter {
+      position: fixed;
+      top: 18px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      pointer-events: none;
+      user-select: none;
+    }
+    #counter .label {
+      color: rgba(255,255,255,0.30);
+      font-size: 11px;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+    }
+    #counter .value {
+      color: rgba(255,255,255,0.88);
+      font-size: 32px;
+      font-weight: 200;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #keymap {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      color: rgba(255,255,255,0.28);
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      line-height: 1.8;
+      pointer-events: none;
+      user-select: none;
+      text-align: right;
+    }
+    #keymap kbd {
+      display: inline-block;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: inherit;
+      font-size: 10px;
+    }
+
+    #ui {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.85);
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 10px 26px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      backdrop-filter: blur(10px);
+      transition: background 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+    button:hover  { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3); }
+    button:active { background: rgba(255,255,255,0.25); }
+
+    /* ── Confetti canvas ───────────────────────────────────── */
+    #confetti {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 50;
+    }
+
+    /* ── Win overlay ────────────────────────────────────────── */
+    #winOverlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0);
+      backdrop-filter: blur(0px);
+      -webkit-backdrop-filter: blur(0px);
+      pointer-events: none;
+      z-index: 100;
+      transition: background 0.55s ease, backdrop-filter 0.55s ease,
+                  -webkit-backdrop-filter 0.55s ease;
+    }
+    #winOverlay.show {
+      background: rgba(0,0,0,0.60);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      pointer-events: all;
+    }
+    #winCard {
+      background: rgba(18,18,36,0.88);
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 28px;
+      padding: 52px 68px;
+      text-align: center;
+      color: #fff;
+      transform: scale(0.72) translateY(32px);
+      opacity: 0;
+      transition: transform 0.52s cubic-bezier(0.34,1.56,0.64,1),
+                  opacity 0.38s ease;
+      box-shadow: 0 32px 90px rgba(0,0,0,0.55);
+    }
+    #winOverlay.show #winCard {
+      transform: scale(1) translateY(0);
+      opacity: 1;
+    }
+    #winCard .trophy  { font-size: 68px; line-height: 1; margin-bottom: 18px; }
+    #winCard h1       { font-size: 38px; font-weight: 300; letter-spacing: -0.02em;
+                        margin-bottom: 10px; }
+    #winCard .sub     { color: rgba(255,255,255,0.55); font-size: 15px;
+                        margin-bottom: 36px; }
+    #winCard .sub strong { color: rgba(255,255,255,0.92); font-weight: 500; }
+    #btnWinPlay {
+      background: #fff;
+      color: #0d0d1a;
+      border: none;
+      padding: 13px 40px;
+      border-radius: 999px;
+      font-size: 13px;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 24px rgba(255,255,255,0.18);
+      transition: transform 0.12s, box-shadow 0.2s;
+    }
+    #btnWinPlay:hover  { transform: scale(1.05); box-shadow: 0 6px 32px rgba(255,255,255,0.28); }
+    #btnWinPlay:active { transform: scale(0.97); }
+  </style>
+</head>
+<body>
+  <div id="hint">Drag the background to orbit &nbsp;·&nbsp; Drag a face to turn a slice</div>
+
+  <div id="counter">
+    <span class="label">Moves</span>
+    <span class="value" id="moveValue">0</span>
+  </div>
+
+  <div id="keymap">
+    <kbd>▲</kbd> <kbd>▼</kbd> <kbd>◀</kbd> <kbd>▶</kbd> &nbsp;orbit<br>
+    <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp;orbit
+  </div>
+
+  <div id="ui">
+    <button id="btnScramble">Scramble</button>
+    <button id="btnReset">Reset</button>
+  </div>
+
+  <!-- confetti sits above the 3-D canvas but below the win card -->
+  <canvas id="confetti"></canvas>
+
+  <div id="winOverlay">
+    <div id="winCard">
+      <div class="trophy" id="winTrophy">🏆</div>
+      <h1 id="winTitle">Nice Work!</h1>
+      <p class="sub">Solved in <strong><span id="winMoves">0</span> moves</strong></p>
+      <button id="btnWinPlay">Play Again</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script>
+  'use strict';
+
+  // ─────────────────────────────────────────────────────────────
+  //  RENDERER · SCENE · CAMERA
+  // ─────────────────────────────────────────────────────────────
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const scene  = new THREE.Scene();
+  scene.background = new THREE.Color(0x0d0d1a);
+
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.set(5.0, 4.0, 6.5);
+  camera.lookAt(0, 0, 0);
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const sunLight = new THREE.DirectionalLight(0xffffff, 0.90);
+  sunLight.position.set(8, 14, 10);
+  scene.add(sunLight);
+  const fillLight = new THREE.DirectionalLight(0x8899ff, 0.22);
+  fillLight.position.set(-7, -5, -9);
+  scene.add(fillLight);
+
+  // ─────────────────────────────────────────────────────────────
+  //  BUILD THE CUBE  (27 cubies, each with 6 face materials)
+  //
+  //  BoxGeometry material order: +X, -X, +Y, -Y, +Z, -Z
+  // ─────────────────────────────────────────────────────────────
+  const cubeGroup = new THREE.Group();
+  scene.add(cubeGroup);
+
+  // Standard Rubik's palette
+  const FACE_COLS = {
+    px: 0xff6d00,   // right  – orange
+    nx: 0xd32f2f,   // left   – red
+    py: 0xffffff,   // top    – white
+    ny: 0xffd600,   // bottom – yellow
+    pz: 0x00a550,   // front  – green
+    nz: 0x1565c0,   // back   – blue
+  };
+  const INNER_COL = 0x111111;
+
+  function mat(col) {
+    return new THREE.MeshLambertMaterial({ color: col });
+  }
+
+  const cubies = [];
+
+  for (let x = -1; x <= 1; x++) {
+    for (let y = -1; y <= 1; y++) {
+      for (let z = -1; z <= 1; z++) {
+        const mats = [
+          mat(x ===  1 ? FACE_COLS.px : INNER_COL),  // +X
+          mat(x === -1 ? FACE_COLS.nx : INNER_COL),  // -X
+          mat(y ===  1 ? FACE_COLS.py : INNER_COL),  // +Y
+          mat(y === -1 ? FACE_COLS.ny : INNER_COL),  // -Y
+          mat(z ===  1 ? FACE_COLS.pz : INNER_COL),  // +Z
+          mat(z === -1 ? FACE_COLS.nz : INNER_COL),  // -Z
+        ];
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.928, 0.928, 0.928), mats);
+        mesh.position.set(x, y, z);
+        // grid coords – updated after every move
+        mesh.userData = { gx: x, gy: y, gz: z };
+        cubeGroup.add(mesh);
+        cubies.push(mesh);
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SMALL VECTOR HELPERS
+  // ─────────────────────────────────────────────────────────────
+
+  // Snap a vector to the nearest cardinal axis (returns ±X, ±Y, or ±Z unit vec)
+  function snapAxis(v) {
+    const ax = Math.abs(v.x), ay = Math.abs(v.y), az = Math.abs(v.z);
+    if (ax >= ay && ax >= az) return new THREE.Vector3(Math.sign(v.x), 0, 0);
+    if (ay >= az)             return new THREE.Vector3(0, Math.sign(v.y), 0);
+    return                           new THREE.Vector3(0, 0, Math.sign(v.z));
+  }
+
+  // Transform a direction from world space into cubeGroup local space
+  function toLocal(worldDir) {
+    const inv = new THREE.Matrix4().copy(cubeGroup.matrixWorld).invert();
+    return worldDir.clone().transformDirection(inv);
+  }
+
+  // Camera right / up vectors in world space (read from camera matrix columns)
+  function camRight() { return new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0); }
+  function camUp()    { return new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1); }
+
+  // ─────────────────────────────────────────────────────────────
+  //  PROGRAMMATIC MOVE  (used by Scramble / Reset, no animation)
+  // ─────────────────────────────────────────────────────────────
+  function applyMove(axis, layer, dir) {
+    // axis  : 'x' | 'y' | 'z'
+    // layer : -1 | 0 | 1
+    // dir   :  1 | -1   (+1 = positive rotation around axis)
+    const pivot    = new THREE.Group();
+    cubeGroup.add(pivot);
+
+    const axisVec = new THREE.Vector3(
+      axis === 'x' ? 1 : 0,
+      axis === 'y' ? 1 : 0,
+      axis === 'z' ? 1 : 0
+    );
+
+    // Move layer cubies from cubeGroup → pivot (pivot is still identity)
+    const layer_cubies = cubies.filter(c => Math.round(c.userData['g' + axis]) === layer);
+    layer_cubies.forEach(c => { cubeGroup.remove(c); pivot.add(c); });
+
+    // Apply 90° rotation to pivot, then bake into cubie transforms
+    pivot.quaternion.setFromAxisAngle(axisVec, dir * Math.PI / 2);
+    pivot.updateMatrixWorld(true);
+
+    layer_cubies.forEach(c => {
+      cubeGroup.attach(c);                        // re-parent, preserving world transform
+      c.position.x = Math.round(c.position.x);   // snap to integer grid
+      c.position.y = Math.round(c.position.y);
+      c.position.z = Math.round(c.position.z);
+      c.userData.gx = c.position.x;
+      c.userData.gy = c.position.y;
+      c.userData.gz = c.position.z;
+    });
+
+    cubeGroup.remove(pivot);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SOLVE DETECTION
+  //
+  //  For each of the 6 outer faces we collect the 9 cubies that
+  //  live there (by grid coord).  For every cubie we find which
+  //  geometry face is currently pointing in the face's world
+  //  direction by inverting the cubie's accumulated quaternion,
+  //  then read that material's colour.  If all 9 match → solved.
+  // ─────────────────────────────────────────────────────────────
+
+  // Map a snapped local-geometry direction to a BoxGeometry
+  // material index  (+X=0, -X=1, +Y=2, -Y=3, +Z=4, -Z=5)
+  function dirToMatIdx(v) {
+    if (v.x >  0.5) return 0;
+    if (v.x < -0.5) return 1;
+    if (v.y >  0.5) return 2;
+    if (v.y < -0.5) return 3;
+    if (v.z >  0.5) return 4;
+    return 5;
+  }
+
+  // Return the hex colour of whichever sticker on `cubie` is
+  // physically facing `faceDir` (a cube-local unit direction).
+  const _invQ  = new THREE.Quaternion();
+  const _faceV = new THREE.Vector3();
+  function visibleColor(cubie, faceDir) {
+    _invQ.copy(cubie.quaternion).invert();
+    _faceV.copy(faceDir).applyQuaternion(_invQ);
+    return cubie.material[dirToMatIdx(snapAxis(_faceV))].color.getHex();
+  }
+
+  // Returns true when every face of the cube shows a single colour.
+  function isSolved() {
+    const faces = [
+      { axis: 'gx', val:  1, dir: new THREE.Vector3( 1, 0, 0) },
+      { axis: 'gx', val: -1, dir: new THREE.Vector3(-1, 0, 0) },
+      { axis: 'gy', val:  1, dir: new THREE.Vector3( 0, 1, 0) },
+      { axis: 'gy', val: -1, dir: new THREE.Vector3( 0,-1, 0) },
+      { axis: 'gz', val:  1, dir: new THREE.Vector3( 0, 0, 1) },
+      { axis: 'gz', val: -1, dir: new THREE.Vector3( 0, 0,-1) },
+    ];
+    for (const { axis, val, dir } of faces) {
+      const face = cubies.filter(c => c.userData[axis] === val);
+      const col0 = visibleColor(face[0], dir);
+      if (col0 === INNER_COL) return false;
+      if (!face.every(c => visibleColor(c, dir) === col0)) return false;
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  MOVE COUNTER
+  // ─────────────────────────────────────────────────────────────
+  let moveCount = 0;
+  const moveValueEl = document.getElementById('moveValue');
+
+  function setMoveCount(n) {
+    moveCount = n;
+    moveValueEl.textContent = n;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  KEYBOARD ORBIT STATE
+  // ─────────────────────────────────────────────────────────────
+  const keysDown = new Set();
+
+  window.addEventListener('keydown', e => {
+    // Ignore key repeats and don't steal browser shortcuts
+    if (e.repeat || e.metaKey || e.ctrlKey) return;
+    keysDown.add(e.key);
+  });
+  window.addEventListener('keyup', e => keysDown.delete(e.key));
+  // Clear all keys if window loses focus
+  window.addEventListener('blur', () => keysDown.clear());
+
+  // ─────────────────────────────────────────────────────────────
+  //  WIN STATE
+  // ─────────────────────────────────────────────────────────────
+  let celebrating = false;   // true while win overlay is showing
+
+  const winOverlayEl = document.getElementById('winOverlay');
+  const winMovesEl   = document.getElementById('winMoves');
+  const winTitleEl   = document.getElementById('winTitle');
+  const winTrophyEl  = document.getElementById('winTrophy');
+
+  function showWin() {
+    winOverlayEl.classList.add('show');
+  }
+  function hideWin() {
+    winOverlayEl.classList.remove('show');
+  }
+
+  function titleForCount(n) {
+    if (n <= 20)  return { trophy: '🔥', title: 'Incredible!' };
+    if (n <= 50)  return { trophy: '🏆', title: 'Nice Work!' };
+    if (n <= 100) return { trophy: '🎉', title: 'Well Done!' };
+    return               { trophy: '💪', title: 'You Did It!' };
+  }
+
+  function triggerWin() {
+    if (celebrating) return;
+    celebrating = true;
+
+    const { trophy, title } = titleForCount(moveCount);
+    winTrophyEl.textContent   = trophy;
+    winTitleEl.textContent    = title;
+    winMovesEl.textContent    = moveCount;
+
+    launchConfetti();
+    playSuccessSound();
+    setTimeout(showWin, 300);  // small delay so the final snap is visible first
+  }
+
+  function checkSolved() {
+    if (celebrating || moveCount === 0 || queueRunning) return;
+    if (isSolved()) triggerWin();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  CONFETTI
+  // ─────────────────────────────────────────────────────────────
+  const confCanvas  = document.getElementById('confetti');
+  const confCtx     = confCanvas.getContext('2d');
+  let   confParticles = [];
+  let   confAnimId    = null;
+
+  const CONF_COLS = [
+    '#ff6d00','#d32f2f','#ffd600','#00a550',
+    '#1565c0','#ffffff','#e91e63','#7c4dff','#00bcd4'
+  ];
+
+  function launchConfetti() {
+    confCanvas.width  = window.innerWidth;
+    confCanvas.height = window.innerHeight;
+    confParticles = [];
+
+    // Three staggered burst origins across the bottom half
+    const origins = [
+      { x: window.innerWidth * 0.25, y: window.innerHeight * 0.75 },
+      { x: window.innerWidth * 0.50, y: window.innerHeight * 0.80 },
+      { x: window.innerWidth * 0.75, y: window.innerHeight * 0.75 },
+    ];
+    origins.forEach(o => {
+      for (let i = 0; i < 65; i++) {
+        const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI; // ±90° around straight up
+        const speed = 5 + Math.random() * 14;
+        confParticles.push({
+          x:      o.x + (Math.random() - 0.5) * 30,
+          y:      o.y,
+          vx:     Math.cos(angle) * speed,
+          vy:     Math.sin(angle) * speed,
+          rot:    Math.random() * Math.PI * 2,
+          rotV:   (Math.random() - 0.5) * 0.28,
+          color:  CONF_COLS[Math.floor(Math.random() * CONF_COLS.length)],
+          w:      5 + Math.random() * 11,
+          h:      3 + Math.random() * 5,
+          alpha:  1,
+          fade:   0.004 + Math.random() * 0.007,
+          circle: Math.random() < 0.22,
+        });
+      }
+    });
+
+    if (confAnimId) cancelAnimationFrame(confAnimId);
+    tickConfetti();
+  }
+
+  function tickConfetti() {
+    confCtx.clearRect(0, 0, confCanvas.width, confCanvas.height);
+    confParticles = confParticles.filter(p => p.alpha > 0.015);
+
+    confParticles.forEach(p => {
+      p.x    += p.vx;
+      p.y    += p.vy;
+      p.vy   += 0.20;          // gravity
+      p.vx   *= 0.993;         // light air drag
+      p.rot  += p.rotV;
+      p.alpha = Math.max(0, p.alpha - p.fade);
+
+      confCtx.save();
+      confCtx.translate(p.x, p.y);
+      confCtx.rotate(p.rot);
+      confCtx.globalAlpha = p.alpha;
+      confCtx.fillStyle   = p.color;
+      if (p.circle) {
+        confCtx.beginPath();
+        confCtx.arc(0, 0, p.w / 2, 0, Math.PI * 2);
+        confCtx.fill();
+      } else {
+        confCtx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      }
+      confCtx.restore();
+    });
+
+    if (confParticles.length > 0) {
+      confAnimId = requestAnimationFrame(tickConfetti);
+    } else {
+      confCtx.clearRect(0, 0, confCanvas.width, confCanvas.height);
+      confAnimId = null;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SUCCESS SOUND  (Web Audio API – no external files)
+  //
+  //  Ascending C-major arpeggio  C5→E5→G5→C6,
+  //  then a soft chord swell underneath.
+  // ─────────────────────────────────────────────────────────────
+  function playSuccessSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+
+      const master = ctx.createGain();
+      master.gain.value = 0.65;
+      master.connect(ctx.destination);
+
+      function note(freq, t0, dur, vol = 0.28, type = 'sine') {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, t0);
+        gain.gain.linearRampToValueAtTime(vol, t0 + 0.018);
+        gain.gain.setValueAtTime(vol, t0 + dur * 0.65);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.connect(gain);
+        gain.connect(master);
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.05);
+      }
+
+      const t = ctx.currentTime;
+      // Arpeggio
+      note(523.25, t + 0.00, 0.22);          // C5
+      note(659.25, t + 0.11, 0.22);          // E5
+      note(783.99, t + 0.22, 0.22);          // G5
+      note(1046.50, t + 0.33, 0.75, 0.32);  // C6 – ring out
+      // Soft chord swell
+      note( 523.25, t + 0.36, 0.90, 0.11);  // C5
+      note( 659.25, t + 0.36, 0.90, 0.11);  // E5
+      note( 783.99, t + 0.36, 0.90, 0.11);  // G5
+
+      setTimeout(() => ctx.close(), 2800);
+    } catch (_) { /* AudioContext unavailable – fail silently */ }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  INTERACTION STATE
+  // ─────────────────────────────────────────────────────────────
+  const raycaster = new THREE.Raycaster();
+  let isDragging   = false;
+  let isOrbit      = false;
+  let mouseStart   = { x: 0, y: 0 };
+  let mouseLast    = { x: 0, y: 0 };
+
+  /*  faceDrag – populated when the user clicks a cubie face
+      ─────────────────────────────────────────────────────
+      hitCubie    : mesh that was hit
+      hitNormal   : face normal in cube-local space, snapped to axis
+      committed   : false until drag threshold is crossed and rotation axis chosen
+      pivot       : THREE.Group holding the rotating layer
+      snappedRot  : signed rotation axis (THREE.Vector3)  e.g. (0,1,0) or (0,-1,0)
+      dragAxis    : 'x'|'y'|'z'  (unsigned, for layer lookup)
+      dragLayer   : -1|0|1
+      screenDir   : THREE.Vector2 – screen-space direction for +angle rotation
+      currentAngle: live rotation angle (radians)
+  */
+  let faceDrag = null;
+
+  /*  snapAnim – active while a layer is snapping to the nearest 90°
+      ─────────────────────────────────────────────────────────────
+      pivot, snappedRot, from, to, t, onComplete
+  */
+  let snapAnim = null;
+
+  // ─────────────────────────────────────────────────────────────
+  //  POINTER DOWN
+  // ─────────────────────────────────────────────────────────────
+  function pointerDown(cx, cy) {
+    if (snapAnim) return;          // ignore input while snapping
+    isDragging = true;
+    mouseStart = mouseLast = { x: cx, y: cy };
+
+    const ndc = new THREE.Vector2(
+      (cx / window.innerWidth)  *  2 - 1,
+      (cy / window.innerHeight) * -2 + 1
+    );
+    scene.updateMatrixWorld();
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(cubies);
+
+    if (hits.length > 0) {
+      const hit = hits[0];
+      // Convert face normal from mesh-local → world → cubeGroup-local
+      const worldN = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      const localN = toLocal(worldN);
+      faceDrag = {
+        hitCubie:     hit.object,
+        hitNormal:    snapAxis(localN),
+        committed:    false,
+        pivot:        null,
+        snappedRot:   null,
+        dragAxis:     null,
+        dragLayer:    null,
+        screenDir:    null,
+        currentAngle: 0,
+      };
+    } else {
+      isOrbit = true;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  POINTER MOVE
+  // ─────────────────────────────────────────────────────────────
+  function pointerMove(cx, cy) {
+    if (!isDragging) return;
+
+    const dx     = cx - mouseLast.x;
+    const dy     = cy - mouseLast.y;
+    mouseLast    = { x: cx, y: cy };
+    const totalDx = cx - mouseStart.x;
+    const totalDy = cy - mouseStart.y;
+
+    // ── ORBIT (drag on empty space) ───────────────────────────
+    if (isOrbit) {
+      const speed = 0.006;
+      const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * speed);
+      const qX = new THREE.Quaternion().setFromAxisAngle(camRight(), dy * speed);
+      cubeGroup.quaternion.premultiply(qX).premultiply(qY);
+      return;
+    }
+
+    if (!faceDrag) return;
+
+    const dist = Math.hypot(totalDx, totalDy);
+
+    // ── PHASE 1 : commit to a rotation axis once drag threshold hit ──
+    if (!faceDrag.committed && dist > 7) {
+
+      // Build drag vector in cube-local space
+      const worldDrag = camRight().multiplyScalar(totalDx)
+                                  .addScaledVector(camUp(), -totalDy);
+      const localDrag = toLocal(worldDrag.normalize());
+
+      // Project onto the face plane (remove the component along the face normal)
+      const n = faceDrag.hitNormal;
+      localDrag.addScaledVector(n, -localDrag.dot(n));
+      if (localDrag.length() < 0.001) return;
+      localDrag.normalize();
+
+      // Rotation axis  =  face_normal  ×  drag_in_face_plane  (then snap)
+      //
+      //  Why this cross product?
+      //    For small rotation dθ around axis A, a face point P moves by  A × P · dθ.
+      //    Setting that equal to localDrag gives  A ∝ N × D  (with N as a stand-in
+      //    for P since P ≈ N on an outer face), yielding the "third axis" rule:
+      //    A is whichever of X/Y/Z is neither the face-normal axis nor the drag axis.
+      const rotVec    = new THREE.Vector3().crossVectors(n, localDrag);
+      const snappedRot = snapAxis(rotVec);
+      if (snappedRot.length() < 0.5) return;   // degenerate
+
+      // Which axis letter and which layer?
+      let dragAxis, dragLayer;
+      if (Math.abs(snappedRot.x) > 0.5) {
+        dragAxis  = 'x';
+        dragLayer = Math.round(faceDrag.hitCubie.userData.gx);
+      } else if (Math.abs(snappedRot.y) > 0.5) {
+        dragAxis  = 'y';
+        dragLayer = Math.round(faceDrag.hitCubie.userData.gy);
+      } else {
+        dragAxis  = 'z';
+        dragLayer = Math.round(faceDrag.hitCubie.userData.gz);
+      }
+
+      // Screen-space direction that corresponds to a POSITIVE rotation angle.
+      //   The face point moves in direction  snappedRot × hitNormal  for +dθ.
+      //   Project that into screen space to get screenDir.
+      const posLocal = new THREE.Vector3().crossVectors(snappedRot, n).normalize();
+      cubeGroup.updateMatrixWorld();
+      camera.updateMatrixWorld();
+      const posView = posLocal.clone()
+        .transformDirection(cubeGroup.matrixWorld)
+        .transformDirection(camera.matrixWorldInverse);
+      const screenDir = new THREE.Vector2(posView.x, -posView.y);
+      if (screenDir.length() < 0.001) return;
+      screenDir.normalize();
+
+      // Create the rotating pivot and populate it with the layer's cubies
+      const pivot = new THREE.Group();
+      cubeGroup.add(pivot);
+      cubies.forEach(c => {
+        if (Math.round(c.userData['g' + dragAxis]) === dragLayer) {
+          cubeGroup.remove(c);
+          pivot.add(c);
+        }
+      });
+
+      faceDrag.snappedRot   = snappedRot;
+      faceDrag.dragAxis     = dragAxis;
+      faceDrag.dragLayer    = dragLayer;
+      faceDrag.pivot        = pivot;
+      faceDrag.screenDir    = screenDir;
+      faceDrag.committed    = true;
+    }
+
+    // ── PHASE 2 : live-rotate the pivot ──────────────────────
+    if (faceDrag.committed && faceDrag.pivot) {
+      const proj = new THREE.Vector2(totalDx, totalDy).dot(faceDrag.screenDir);
+      // 150 px ≈ 90°  (feels natural; tune if desired)
+      const angle = Math.max(-Math.PI / 2, Math.min(Math.PI / 2,
+                             proj * (Math.PI / 2) / 150));
+      faceDrag.currentAngle = angle;
+      faceDrag.pivot.quaternion.setFromAxisAngle(faceDrag.snappedRot, angle);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  POINTER UP  →  snap the layer to the nearest 90°
+  // ─────────────────────────────────────────────────────────────
+  function pointerUp() {
+    if (!isDragging) return;
+    isDragging = isOrbit = false;
+
+    if (faceDrag && faceDrag.committed && faceDrag.pivot) {
+      const cur    = faceDrag.currentAngle;
+      const raw    = Math.round(cur / (Math.PI / 2)) * (Math.PI / 2);
+      const target = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, raw));
+      // Count the move if the layer actually turned (snapped to ±90°, not back to 0)
+      if (target !== 0 && !queueRunning) setMoveCount(moveCount + 1);
+      snapAnim = {
+        pivot:       faceDrag.pivot,
+        snappedRot:  faceDrag.snappedRot,
+        from:        cur,
+        to:          target,
+        t:           0,
+        onComplete:  null,
+        isUserMove:  true,   // flag so finalizeSnap can run checkSolved
+      };
+    }
+    faceDrag = null;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  FINALIZE SNAP  –  bake pivot rotation into cubie transforms
+  // ─────────────────────────────────────────────────────────────
+  function finalizeSnap() {
+    const { pivot, snappedRot, to, onComplete, isUserMove } = snapAnim;
+
+    // Set exact final rotation
+    pivot.quaternion.setFromAxisAngle(snappedRot, to);
+    pivot.updateMatrixWorld(true);
+
+    // Re-parent each cubie back to cubeGroup, preserving world transform
+    [...pivot.children].forEach(c => {
+      cubeGroup.attach(c);
+      c.position.x = Math.round(c.position.x);
+      c.position.y = Math.round(c.position.y);
+      c.position.z = Math.round(c.position.z);
+      c.userData.gx = c.position.x;
+      c.userData.gy = c.position.y;
+      c.userData.gz = c.position.z;
+    });
+
+    cubeGroup.remove(pivot);
+    snapAnim = null;
+    if (onComplete) onComplete();
+    // Check for a solved cube only after a human-initiated move
+    if (isUserMove) checkSolved();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  ANIMATED MOVE QUEUE  (used by Scramble button)
+  // ─────────────────────────────────────────────────────────────
+  const moveQueue = [];
+  let queueRunning = false;
+
+  function enqueueMove(axis, layer, dir) {
+    moveQueue.push({ axis, layer, dir });
+  }
+
+  function runQueue() {
+    if (moveQueue.length === 0) { queueRunning = false; return; }
+    if (snapAnim) return;               // wait for current snap to finish
+    queueRunning = true;
+
+    const { axis, layer, dir } = moveQueue.shift();
+    const axisVec = new THREE.Vector3(
+      axis === 'x' ? 1 : 0,
+      axis === 'y' ? 1 : 0,
+      axis === 'z' ? 1 : 0
+    );
+    const pivot = new THREE.Group();
+    cubeGroup.add(pivot);
+    cubies.filter(c => Math.round(c.userData['g' + axis]) === layer)
+          .forEach(c => { cubeGroup.remove(c); pivot.add(c); });
+
+    snapAnim = {
+      pivot,
+      snappedRot: axisVec.clone().multiplyScalar(dir),  // sign carries direction
+      from:       0,
+      to:         dir * Math.PI / 2,
+      t:          0,
+      speed:      0.22,                 // faster than interactive snap (0.12)
+      onComplete: runQueue,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  BUTTON HANDLERS
+  // ─────────────────────────────────────────────────────────────
+  document.getElementById('btnWinPlay').addEventListener('click', () => {
+    hideWin();
+    celebrating = false;
+    // Start a new scramble so the player can go again immediately
+    if (!queueRunning && !snapAnim) {
+      setMoveCount(0);
+      const axes = ['x','y','z'], layers = [-1,0,1];
+      for (let i = 0; i < 20; i++)
+        enqueueMove(axes[Math.floor(Math.random()*3)], layers[Math.floor(Math.random()*3)],
+                    Math.random() < 0.5 ? 1 : -1);
+      runQueue();
+    }
+  });
+
+  document.getElementById('btnScramble').addEventListener('click', () => {
+    if (queueRunning || snapAnim) return;
+    hideWin();
+    celebrating = false;
+    const axes   = ['x', 'y', 'z'];
+    const layers = [-1, 0, 1];
+    for (let i = 0; i < 20; i++) {
+      enqueueMove(
+        axes  [Math.floor(Math.random() * 3)],
+        layers[Math.floor(Math.random() * 3)],
+        Math.random() < 0.5 ? 1 : -1
+      );
+    }
+    runQueue();
+  });
+
+  document.getElementById('btnReset').addEventListener('click', () => {
+    // Cancel any running animation / drag
+    hideWin();
+    celebrating = false;
+    setMoveCount(0);
+    if (snapAnim) { snapAnim.isUserMove = false; finalizeSnap(); }
+    moveQueue.length = 0;
+    queueRunning = false;
+    faceDrag  = null;
+    isDragging = isOrbit = false;
+
+    // Re-parent any stray cubies, then restore original positions / rotations
+    cubies.forEach(c => {
+      if (c.parent !== cubeGroup) cubeGroup.attach(c);
+    });
+    cubies.forEach((c, i) => {
+      // Reconstruct original grid position from creation-loop index
+      const ox = Math.floor(i / 9) - 1;            // outer loop  x ∈ {-1,0,1}
+      const oy = Math.floor((i % 9) / 3) - 1;      // middle loop y ∈ {-1,0,1}
+      const oz = (i % 3) - 1;                       // inner loop  z ∈ {-1,0,1}
+      c.position.set(ox, oy, oz);
+      c.quaternion.identity();
+      c.userData.gx = ox;
+      c.userData.gy = oy;
+      c.userData.gz = oz;
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  //  EVENT LISTENERS
+  // ─────────────────────────────────────────────────────────────
+
+  // Mouse – ignore clicks that originate on a UI button
+  renderer.domElement.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
+  window.addEventListener('mousemove',  e => pointerMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup',    pointerUp);
+
+  // Touch
+  renderer.domElement.addEventListener('touchstart', e => {
+    e.preventDefault();
+    pointerDown(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: false });
+  window.addEventListener('touchmove', e => {
+    e.preventDefault();
+    pointerMove(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: false });
+  window.addEventListener('touchend', e => { e.preventDefault(); pointerUp(); }, { passive: false });
+
+  // Resize
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    // Keep confetti canvas in sync
+    if (confParticles.length > 0) {
+      confCanvas.width  = window.innerWidth;
+      confCanvas.height = window.innerHeight;
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  //  RENDER LOOP
+  // ─────────────────────────────────────────────────────────────
+  function animate() {
+    requestAnimationFrame(animate);
+
+    if (snapAnim) {
+      const speed = snapAnim.speed ?? 0.12;
+      snapAnim.t += speed;
+      const t     = Math.min(snapAnim.t, 1.0);
+      const ease  = 1 - Math.pow(1 - t, 3);                 // cubic ease-out
+      const angle = snapAnim.from + (snapAnim.to - snapAnim.from) * ease;
+      snapAnim.pivot.quaternion.setFromAxisAngle(snapAnim.snappedRot, angle);
+      if (t >= 1.0) finalizeSnap();
+
+      // Keep queue ticking even when snapping
+      if (!snapAnim && queueRunning && moveQueue.length > 0) runQueue();
+    }
+
+    // ── KEYBOARD ORBIT ─────────────────────────────────────────
+    if (keysDown.size > 0) {
+      const KS = 0.032;   // radians per frame
+      let kDx = 0, kDy = 0;
+      if (keysDown.has('ArrowLeft')  || keysDown.has('a') || keysDown.has('A')) kDx -= 1;
+      if (keysDown.has('ArrowRight') || keysDown.has('d') || keysDown.has('D')) kDx += 1;
+      if (keysDown.has('ArrowUp')    || keysDown.has('w') || keysDown.has('W')) kDy -= 1;
+      if (keysDown.has('ArrowDown')  || keysDown.has('s') || keysDown.has('S')) kDy += 1;
+      if (kDx !== 0 || kDy !== 0) {
+        const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), kDx * KS);
+        const qX = new THREE.Quaternion().setFromAxisAngle(camRight(), kDy * KS);
+        cubeGroup.quaternion.premultiply(qX).premultiply(qY);
+      }
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  animate();
+  </script>
+</body>
+</html>
